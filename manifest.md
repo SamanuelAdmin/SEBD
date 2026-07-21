@@ -4,8 +4,10 @@
 ### Database table
 
 Database schema
+```
 |_____|_______|_______|____________|
  Nonce DB Meta DB Body Poly1305 MAC
+```
 
 - Database nonce: nonce for decryption DB meta using xchacha20 alg.
 - DB Meta: metadata for the database
@@ -24,10 +26,12 @@ All blocks in the database have the same size, from 256 bytes to 2GB (max for fa
 Each block may has unique user's password.
 
 Block schema:
+```
 |_____|_____________________|____________|
  Nonce      Ciphertext       Poly1305 MAC
       |__________|__________|
        Block meta Block body
+```
 
 Decrypted structures:
 **Block meta**:
