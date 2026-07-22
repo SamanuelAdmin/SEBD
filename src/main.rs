@@ -45,7 +45,7 @@ fn inner_round(state: &mut [u32; 16]) {
 }
 
 
-fn chacha20_block(key: &[u32; 8], block: &u32, nonce: &[u32; 3]) -> [u32; 16] {
+fn block_key_generator(key: &[u32; 8], block: &u32, nonce: &[u32; 3]) -> [u32; 16] {
 //    chacha20_block(key, counter, nonce):
 //        state = constants | key | counter | nonce
 //        initial_state = state
@@ -70,8 +70,7 @@ fn chacha20_block(key: &[u32; 8], block: &u32, nonce: &[u32; 3]) -> [u32; 16] {
         *block, nonce[0], nonce[1], nonce[2]
     ];
     
-    let mut initial_state = [0u32; 16];
-    initial_state.clone_from_slice(&state);
+    let initial_state = state;
 
     for _ in 0..10 {
         inner_round(&mut state);
@@ -86,18 +85,15 @@ fn chacha20_block(key: &[u32; 8], block: &u32, nonce: &[u32; 3]) -> [u32; 16] {
 }
 
 
-fn chacha20_block_le_wrapper(key: &[u8; 32], block: &[u8; 4], nonce: &[u8; 12]) -> [u8; 64] {
+fn block_key_generator_le_wrapper(key: &[u8; 32], block: &[u8; 4], nonce: &[u8; 12]) -> [u8; 64] {
     // convert ordinary key, block and nonce to little endian (small bytes are first)
-    let new_key = [
-        u32::from_le_bytes(key[0..4].try_into().unwrap()),
-        u32::from_le_bytes(key[4..8].try_into().unwrap()),
-        u32::from_le_bytes(key[8..12].try_into().unwrap()),
-        u32::from_le_bytes(key[12..16].try_into().unwrap()),
-        u32::from_le_bytes(key[16..20].try_into().unwrap()),
-        u32::from_le_bytes(key[20..24].try_into().unwrap()),
-        u32::from_le_bytes(key[24..28].try_into().unwrap()),
-        u32::from_le_bytes(key[28..32].try_into().unwrap()),
-    ];
+    let mut new_key = [0u32; 8];
+    let mut le_result = [0u8; 64];
+
+    for (dst, chunk) in new_key.iter_mut().zip(key.chunks_exact(4)) {
+        *dst = u32::from_le_bytes(chunk.try_into().unwrap());
+    }
+
     let new_block = u32::from_le_bytes(*block);
     let new_nonce = [
         u32::from_le_bytes(nonce[0..4].try_into().unwrap()),
@@ -105,17 +101,17 @@ fn chacha20_block_le_wrapper(key: &[u8; 32], block: &[u8; 4], nonce: &[u8; 12]) 
         u32::from_le_bytes(nonce[8..12].try_into().unwrap()),
     ];
 
-    let state = chacha20_block(&new_key, &new_block, &new_nonce);
-    let mut le_result = [0u8; 64];
+    let state = block_key_generator(&new_key, &new_block, &new_nonce);
 
-    for i in 0..16 {
-        le_result[i*4..(i+1)*4].copy_from_slice(
-            &u32::to_le_bytes(state[i])
+    for (state_el, chunk) in state.iter().zip(le_result.chunks_mut(4)) {
+        chunk.copy_from_slice(
+            &u32::to_le_bytes(*state_el)
         );
     }
 
     le_result
 }
+
 
 
 fn main() {
@@ -137,7 +133,7 @@ mod chacha20_tests {
 
 
     #[test]
-    fn test_chacha20_block() {
+    fn test_block_key_generator() {
         let key = [
             0x00, 0x01, 0x02, 0x03, 
             0x04, 0x05, 0x06, 0x07, 
@@ -155,7 +151,7 @@ mod chacha20_tests {
             0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x4a, 0x00, 0x00, 0x00, 0x00
         ];
 
-        let state = chacha20_block_le_wrapper(&key, &block, &nonce);
+        let state = block_key_generator_le_wrapper(&key, &block, &nonce);
 
 
         let expected_state = [
