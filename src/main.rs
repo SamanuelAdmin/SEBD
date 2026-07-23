@@ -1,6 +1,17 @@
 // https://www.rfc-editor.org/info/rfc8439
 
 
+fn __clear_u32_arr(arr: &mut [u32]) {
+    for i in 0..arr.len() {
+        unsafe {
+            core::ptr::write_volatile::<u32>(
+                &mut arr[i] as *mut u32, 0u32
+            );
+        }
+    }
+}
+
+
 fn quarter_round(mut a: u32, mut b: u32, mut c: u32, mut d: u32) -> (u32, u32, u32, u32) {
     a = a.wrapping_add(b);
     d ^= a;
@@ -45,7 +56,7 @@ fn inner_round(state: &mut [u32; 16]) {
 }
 
 
-fn block_key_generator(key: &[u32; 8], block: &u32, nonce: &[u32; 3]) -> [u32; 16] {
+fn block_key_generator(key: &[u32; 8], block: u32, nonce: &[u32; 3]) -> [u32; 16] {
 //    chacha20_block(key, counter, nonce):
 //        state = constants | key | counter | nonce
 //        initial_state = state
@@ -67,10 +78,10 @@ fn block_key_generator(key: &[u32; 8], block: &u32, nonce: &[u32; 3]) -> [u32; 1
         0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
         key[0], key[1], key[2], key[3],
         key[4], key[5], key[6], key[7],
-        *block, nonce[0], nonce[1], nonce[2]
+        block, nonce[0], nonce[1], nonce[2]
     ];
     
-    let initial_state = state;
+    let mut initial_state = state;
 
     for _ in 0..10 {
         inner_round(&mut state);
@@ -80,6 +91,10 @@ fn block_key_generator(key: &[u32; 8], block: &u32, nonce: &[u32; 3]) -> [u32; 1
     for el_i in 0..16 {
         state[el_i] = state[el_i].wrapping_add(initial_state[el_i])
     }
+
+    
+    // clearing memory of temp state var
+    __clear_u32_arr(&mut initial_state);
     
     state
 }
@@ -94,18 +109,28 @@ fn block_key_generator_le_wrapper(key: &[u8; 32], block: &[u8; 4], nonce: &[u8; 
         *dst = u32::from_le_bytes(chunk.try_into().unwrap());
     }
 
-    let new_block = u32::from_le_bytes(*block);
-    let new_nonce = [
+    let mut new_block = u32::from_le_bytes(*block);
+    let mut new_nonce = [
         u32::from_le_bytes(nonce[0..4].try_into().unwrap()),
         u32::from_le_bytes(nonce[4..8].try_into().unwrap()),
         u32::from_le_bytes(nonce[8..12].try_into().unwrap()),
     ];
 
-    let state = block_key_generator(&new_key, &new_block, &new_nonce);
+    let state = block_key_generator(&new_key, new_block, &new_nonce);
 
     for (state_el, chunk) in state.iter().zip(le_result.chunks_mut(4)) {
         chunk.copy_from_slice(
             &u32::to_le_bytes(*state_el)
+        );
+    }
+
+    // clearing memory of temp state var
+    __clear_u32_arr(&mut new_key);
+    __clear_u32_arr(&mut new_nonce);
+
+    unsafe {
+        core::ptr::write_volatile::<u32>(
+            &mut new_block as *mut u32, 0u32
         );
     }
 
@@ -132,6 +157,9 @@ fn chacha20_process(text: &mut [u8], key: &[u8; 32], nonce: &[u8; 12]) {
         
         counter += 1;
     }
+
+    // clearing memory of temp state var
+    counter = 0;
 }
 
 
